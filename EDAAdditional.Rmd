@@ -1,0 +1,350 @@
+---
+title: "PartCEDAinR"
+author: "BramBrauer"
+date: "6 December 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(readxl)
+library(plotly)
+```
+
+```{r}
+df_orders <- read_csv('..//orders.csv')
+```
+
+```{r}
+str(df_orders)
+```
+
+```{r}
+df_orders <- rename(df_orders, reason_of_return = 'Reason of return', age = 'Age at time of purchase', Order_date = 'Order date')
+```
+
+```{r}
+df_orders
+```
+
+```{r}
+OmzetSteden <- df_orders %>%
+  group_by(City) %>%
+  summarize(sum = sum(Count*Price)) %>%
+  arrange(desc(sum))
+
+OmzetSteden
+```
+
+```{r}
+(KlantenSteden <- df_orders %>%
+  group_by(City) %>%
+  summarise(n = n()))
+```
+
+```{r}
+AantalCategorie <- df_orders %>%
+  group_by(Category) %>%
+  summarize(sum = sum(Count)) %>%
+  arrange(desc(sum))
+
+AantalCategorie
+```
+
+
+```{r}
+OmzetCategorie <- df_orders %>%
+  group_by(Category) %>%
+  summarize(sum = sum(Count*Price), n=n()) %>%
+  arrange(desc(sum))
+
+OmzetCategorie
+```
+
+```{r}
+df_orders %>%
+  group_by(Gender) %>%
+  summarise(n = n())
+```
+
+```{r}
+returnPerCat <- df_orders %>%
+  group_by(reason_of_return, Category) %>%
+  summarise(n = n()) %>%
+  filter(reason_of_return != "")
+
+returnPerCat
+```
+
+```{r}
+ggplot(returnPerCat, aes(x=Category, y=n, fill=reason_of_return)) +
+  geom_col(position='dodge2')
+```
+
+
+```{r}
+ggplot(df_orders) +
+  geom_histogram(aes(x=age), bins=20)
+```
+
+```{r}
+ggplot(df_orders) +
+  geom_histogram(aes(x=age, fill=Category, color="blue"), binwidth =5)
+```
+
+
+```{r}
+LeeftijdPerCat <- df_orders %>%
+  group_by(age, Category, Gender, jaar = year(Order_date)) %>%
+  summarise(n = n()) %>%
+  filter(Category != "Garden furniture", age < 65)
+
+LeeftijdPerCat
+```
+
+```{r}
+ggplot(LeeftijdPerCat, aes(x=age, y=n, fill=Category)) +
+  geom_col(position = "dodge") +
+  facet_wrap(vars(Gender))
+```
+
+
+
+```{r}
+Omzet <- df_orders %>%
+  group_by(jaar = year(Order_date), maand = month(Order_date, label = TRUE), Category) %>%
+  summarise(omzet = sum(Count*Price))
+
+Omzet
+```
+
+
+```{r}
+ggplot(Omzet, aes(x=maand, y=omzet, fill=maand)) +
+  geom_col() +
+  facet_wrap(vars(jaar))
+```
+
+
+```{r}
+ggplot(Omzet, aes(x=maand, y=omzet, fill=Category)) +
+  geom_col(position = "dodge") +
+  facet_wrap(vars(jaar))
+```
+
+
+Rating per categorie
+
+```{r}
+ratingCategorie <- df_orders %>%
+  group_by(Category) %>%
+  count(Rating) %>%
+  filter(Rating != -1)
+
+ratingCategorie
+```
+
+
+```{r}
+ggplot(ratingCategorie, aes(x=Rating, y=n, fill=Category)) +
+  geom_col(position = "dodge")
+```
+
+```{r}
+something <- df_orders %>%
+  group_by(jaar = year(Order_date)) %>%
+  count(Category)
+
+something
+```
+
+```{r}
+ggplot(something, aes(x=jaar, y=n, fill=Category)) +
+  geom_col(position = "dodge")
+```
+
+Customers that are most likely to return a product
+Mutate naar extra binare kolom of het is terug gestuurd
+
+De data is dus eigenlijk voornamelijk hetzelfde als eerst, alleen de geboorte datums zijn aangepast, maar de soorten producten die worden gekocht zijn alsnog het zelfde voor de leeftijden.
+
+Er is wel de hint gegeven om te kijken naar de nieuwe delivery time. Ik ga hier naar kijken en ook kijken of er misschien een verschil is met deze tijd en de rating van het product. Dit zal lastig zijn omdat als er iets is terug gestuurd je de actual delivery time niet hebt.
+
+Er is nieuwe data toegevoegd voor de laatste maanden, dit is vanaf:
+
+```{r}
+extraOrders <- df_orders %>%
+  filter(Additional == 'True')
+```
+
+```{r}
+extraOrders
+```
+
+```{r}
+min(df_orders$Order_date)
+max(df_orders$Order_date)
+min(extraOrders$Order_date)
+max(extraOrders$Order_date)
+lastOrderNumber <- max(extraOrders$`Order number`)
+maxOrder <- extraOrders %>%
+  filter(`Order number` == lastOrderNumber)
+maxOrder
+```
+
+De data van de extra maanden is van begin 2018 tot 30-09-2018. Voor 2013 tot 2017 hadden ze 4.5 miljoen rows, dit is 4.5/5 = 0.9 per jaar. Deze nieuwe dat is 23/24 van het jaar dit zou moeten betekenen dat het 0.9*(23/24)= 0.8625, het aantal is 664475 dit komt dus niet overeen. Er zijn 200000 order regels minder die opgemaakt gemaakt moeten worden in de laatste halve maand, normaal zouden hier 40000 orders plaats vinden.
+
+Eerst ga ik de gemiddelde delivery time en het verschil per de verwachting uitrekenen. Dit doe ik per jaar, dit betekend dat alle nieuwe data in 2018 zit.
+
+```{r}
+avgDel <- df_orders %>%
+  filter(`Actual delivery time` != -1) %>%
+  group_by(jaar = year(Order_date)) %>%
+  summarise(avgExDel = mean(`Expected delivery time`), avgActDel = mean(`Actual delivery time`))
+
+avgDel
+```
+
+Er is te zien dat er in 2018 een extra dag is bijgekomen bij de expected delivery time terwijl en meer dan 3 dagen bijgekomen is bij de actual delivery time. Hiervoor heb ik de bestellingen weggefilterd die terug zijn gezonden, dit is omdat dit een -1 waarde is en het gemiddelde zou aantasten.
+
+Dit is voor alle categorien nu ga ik garden furniture en lounge furniture loskoppelen van de andere
+
+```{r}
+avgDelFur <- df_orders %>%
+  filter(Category == 'Garden furniture' | Category == 'Lounge furniture') %>%
+  filter(`Actual delivery time` != -1) %>%
+  group_by(jaar = year(Order_date)) %>%
+  summarise(avgExDel = mean(`Expected delivery time`), avgActDel = mean(`Actual delivery time`))
+
+avgDelFur
+```
+
+```{r}
+count(df_orders)
+avgDelFur <- df_orders %>%
+  filter(Category != 'Garden furniture') %>%
+  filter(Category != 'Lounge furnitur') %>%
+  filter(`Actual delivery time` != -1) %>%
+  group_by(jaar = year(Order_date)) %>%
+  summarise(avgExDel = mean(`Expected delivery time`), avgActDel = mean(`Actual delivery time`))
+  
+
+avgDelFur
+```
+
+Nu wil ik kijken of er meer producten procentueel gezien zijn terug gestuurd door de langere wachttijd voor het pakket.
+
+```{r}
+Orders <- df_orders %>%
+  group_by(`Order number`, jaar = year(Order_date)) %>%
+  summarise(OrderOmzet = sum(RegelOmzet), n = n())
+Orders
+```
+```{r}
+totalOrdersJaar <- Orders %>%
+  group_by(jaar) %>%
+  summarise(aantalRegels = sum(n), aantalOrders = n())
+totalOrdersJaar
+```
+
+Als een order regel wordt terug gestuurd zijn dit alle producten van deze soort. eg iemand besteld 2 scheppen en een boom, in de tabel staat een -1 bij de scheppen dan zijn beide scheppen terug gestuurd. Om deze reden gaan wij kijken of er meer order regels zijn terug gestuurd naar aanleiding van de langere wachttijd.
+```{r}
+returnedOrderRegels <- df_orders %>%
+  filter(`Actual delivery time` == -1) %>%
+  group_by(jaar = year(Order_date), `Actual delivery time`) %>%
+  summarise(n = n())
+returnedOrderRegels
+```
+
+FOUTFOUTFOUT
+checken of er een correlatie is tussen delevery tijd en terug sturen
+```{r}
+meerOderregels <- df_orders %>%
+  group_by(`Order number`) %>%
+  summarise(n = n()) %>%
+  filter(n > 1)
+meerOderregels
+
+a <- df_orders %>%
+  filter(`Actual delivery time` == -1) %>%
+  filter(`Order number` %in% meerOderregels$`Order number`)
+
+b <- df_orders %>%
+  filter(`Actual delivery time` != -1) %>%
+  filter(`Order number` %in% a$`Order number`) %>%
+  group_by(jaar = year(Order_date), `Actual delivery time`) %>%
+  summarise(n = n())
+b
+```
+
+checken of er een correlatie is tussen deleviry tijd en terug sturen V2
+```{r}
+terugGestuurdActDel <- df_orders %>%
+  filter(`Actual delivery time` == -1) %>%
+  group_by(`Expected delivery time`, `Actual delivery time`, jaar = year(Order_date)) %>%
+  summarise(n = n())
+
+orderPerActDel <- df_orders %>%
+  group_by(`Expected delivery time`, jaar = year(Order_date)) %>%
+  summarise(n = n())
+
+deelGeheel <- right_join(orderPerActDel, terugGestuurdActDel, by = c("jaar" = "jaar", "Expected delivery time" = "Expected delivery time")) %>%
+  mutate(perTerug = n.y/n.x)
+
+deelGeheel
+```
+
+```{r}
+ggplot(deelGeheel) +
+  geom_col(aes(`Expected delivery time`, perTerug)) +
+  facet_wrap(vars(jaar))
+```
+
+```{r}
+del2018 <- df_orders %>%
+  filter(year(Order_date) == 2018) %>%
+  group_by(`Actual delivery time`) %>%
+  summarise(n = n())
+del2018
+```
+
+Deze grafiek lijkt nogal op die van de returned ordes, ik ga kijken of het percentage van terug gestuurde orders op een dag hetzlefde percentage is als van orders geleverd op een dag
+```{r}
+ggplot(del2018) +
+  geom_col(aes(`Actual delivery time`, n))
+```
+```{r}
+abc <- b %>%
+  filter(jaar == 2018)
+
+ggplot(abc) +
+  geom_col(aes(`Actual delivery time`, n))
+```
+
+
+```{r}
+gemiddeldeOrderOmzet <- df_orders %>%
+  group_by(jaar = year(Order_date)) %>%
+  summarise(gemRegOmzet = mean(RegelOmzet))
+gemiddeldeOrderOmzet
+```
+
+```{r}
+avgRatingSegMa = df_orders %>%
+  filter(Rating != -1) %>%
+  group_by(jaar = year(Order_date), maand = month(Order_date), `Age category`) %>%
+  summarise(avgRating = mean(Rating))
+
+avgRatingSegMa
+```
+
+```{r}
+ggplot(avgRatingSegMa) +
+  geom_line(aes(maand, avgRating, fill = `Age category`)) +
+  facet_grid(vars(jaar))
+```
